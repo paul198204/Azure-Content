@@ -1,0 +1,175 @@
+Introducing Asynchronous Cross-Account Copy Blob
+--------------------------------------------------------------------------------------
+ Copy Blob API with 2012-02-12 version that allows you to copy blobs between storage accounts. This enables some interesting scenarios like:
+
+Backup your blobs to another storage account without having to retrieve the content and saving it yourself
+Migrate your blobs from one account to another efficiently with respect to cost and time
+NOTE: To allow cross-account copy, the destination storage account needs to have been created on or after June 7th 2012. This limitation is only for cross-account copy, as accounts created prior can still copy within the same account. If the account is created before June 7th 2012, a copy blob operation across accounts will fail with HTTP Status code 400 (Bad Request) and the storage error code will be “CopyAcrossAccountsNotSupported.”
+
+
+
+Changes to Copy Blob API
+
+To enable copying between accounts, we have made the following changes:
+
+Copy Source is now a URL
+
+In versions prior to 2012-02-12, the source request header was specified as “/<account name>/<fully qualified blob name with container name and snapshot time if applicable >”. With 2012-02-12 version, we now require x-ms-copy-source to be specified as a URL. This is a versioned change, as specifying the old format with this new version will now fail with 400 (Bad Request). The new format allows users to specify a shared access signature or use a custom storage domain name. When specifying a source blob from a different account than the destination, the source blob must either be
+
+A publicly accessible blob (i.e. the container ACL is set to be public)
+A private blob, only if the source URL is pre-authenticated with a Shared Access Signature (i.e. pre-signed URL), allowing read permissions on the source blob
+A copy operation preserves the type of the blob: a block blob will be copied as a block blob and a page blob will be copied to the destination as a page blob. If the destination blob already exists, it will be overwritten. However, if the destination type (for an existing blob) does not match the source type, the operation fails with HTTP status code 400 (Bad Request).
+
+Note: The source blob could even be a blob outside of Windows Azure, as long as it is publicly accessible or accessible via some form of a Signed URL. For source blobs outside of Windows Azure, they will be copied to block blobs.
+
+Copy is now asynchronous
+
+Making copy asynchronous is a major change that greatly differs from previous versions. Previously, the Blob service returns a successful response back to the user only when the copy operation has completed. With version 2012-02-12, the Blob service will instead schedule the copy operation to be completed asynchronously: a success response only indicates that the copy operation has been successfully scheduled. As a consequence, a successful response from Copy Blob will now return HTTP status code 202 (Accepted) instead of 201 (Created).
+
+A few important points:
+
+There can be only one pending copy operation to a given destination blob name URL at time. But a source blob can be a source for many outstanding copies at once.
+The asynchronous copy blob runs in the background using spare bandwidth capacity, so there is no SLA in terms of how fast a blob will be copied.
+Currently there is no limit on the number of pending copy blobs that can be queued up for a storage account, but a pending copy blob operation can live in the system for at most 2 weeks. If longer than that, then the copy blob operation will be terminated.
+If the source storage account is in a different location from the destination storage account, then the source storage account will be charged egress for the copy using the bandwidth rates as shown here.
+When a copy is pending, any attempt to modify, snapshot, or lease the destination blob will fail.
+Below we break down the key concepts of the new Copy Blob API.
+
+Copy Blob Scheduling: when the Blob service receives a Copy Blob request, it will first ensure that the source exists and it can be accessed. If source does not exist or cannot be accessed, an HTTP status code 400 (Bad Request) is returned. If any source access conditions are provided, they will be validated too. If conditions do not match, then an HTTP status code 412 (Precondition Failed) error is returned. Once the source is validated, the service then validates any conditions provided for the destination blob (if it exists). If condition checks fail on destination blob, an HTTP status code 412 (Precondition Failed) is returned. If there is already a pending copy operation, then the service returns an HTTP status code 409 (Conflict). Once the validations are completed, the service then initializes the destination blob before scheduling the copy and then returns a success response to the user. If the source is a page blob, the service will create a page blob with the same length as the source blob but all the bytes are zeroed out. If the source blob is a block blob, the service will commit a zero length block blob for the pending copy blob operation. The service maintains a few copy specific properties during the copy operation to allow clients to poll the status and progress of their copy operations.
+
+Copy Blob Response: when a copy blob operation returns success to the client, this indicates the Blob service has successfully scheduled the copy operation to be completed. Two new response headers are introduced:
+
+x-ms-copy-status: The status of the copy operation at the time the response was sent. It can be one of the following:
+success : Copy operation has completed. This is analogous to the scenario in previous versions where the copy operation has completed synchronously.
+pending: Copy operation is still pending and the user is expected to poll the status of the copy. (See “Polling for Copy Blob properties” below.)
+x-ms-copy-id: The string token that is associated with the copy operation. This can be used when polling the copy status, or if the user wishes to abort a “pending” copy operation.
+Polling for Copy Blob properties: we now provide the following additional properties that allow users to track the progress of the copy, using Get Blob Properties, Get Blob, or List Blobs:
+
+x-ms-copy-status (or CopyStatus): The current status of the copy operation. It can be one of the following:
+pending: Copy operation is pending.
+success: Copy operation completed successfully.
+aborted: Copy operation was aborted by a client.
+failed: Copy operation failed to complete due to an error.
+x-ms-copy-id (CopyId): The id returned by the copy operation which can be used to monitor the progress or abort a copy.
+x-ms-copy-status-description (CopyStatusDescription): Additional error information that can be used for diagnostics.
+x-ms-copy-progress (CopyProgress): The amount of the blob copied so far. This has the format X/Y where X=number of bytes copied and Y is the total number of bytes.
+x-ms-copy-completion-time (CopyCompletionTime): The completion time of the last copy.
+These properties can be monitored to track the progress of a copy operation that returns “pending” status. However, it is important to note that except for Put Page, Put Block and Lease Blob operations, any other write operation (i.e., Put Blob, Put Block List, Set Blob Metadata, Set Blob Properties) on the destination blob will remove the properties pertaining to the copy operation.
+
+Asynchronous Copy Blob: for the cases where the Copy Blob response returns with x-ms-copy-status set to “pending”, the copy operation will complete asynchronously.
+
+Block blobs: The source block blob will be retrieved using 4 MB chunks and copied to the destination.
+Page blobs: The source page blob’s valid ranges are retrieved and copied to destination
+Copy Blob operations are retried on any intermittent failures such as network failures, server busy etc. but any failures are recorded in x-ms-copy-status-description which would let users know why the copy is still pending.
+
+When the copy operation is pending, any writes to the destination blob is disallowed and the write operation will fail with HTTP status code 409 (Conflict). One would need to abort the copy before writing to the destination.
+
+Data integrity during asynchronous copy: The Blob service will lock onto a version of the source blob by storing the source blob ETag at the time of copy. This is done to ensure that any source blob changes can be detected during the course of the copy operation. If the source blob changes during the copy, the ETag will no longer match its value at the start of the copy, causing the copy operation to fail.
+
+Aborting the Copy Blob operation: To allow canceling a pending copy, we have introduced the Abort Copy Blob operation in the 2012-02-12 version of REST API. The Abort operation takes the copy-id returned by the Copy operation and will cancel the operation if it is in the “pending” state. An HTTP status code 409 (Conflict) is returned if the state is not pending or the copy-id does not match the pending copy. The blob’s metadata is retained but the content is zeroed out on a successful abort.
+
+Best Practices
+
+How to migrate blobs from a source account’s container to a destination container in another account?
+
+With asynchronous copy, copying blobs from one account to another is simply as follow:
+
+List blobs in the source container.
+For each blob in the source container, copy the blob to a destination container.
+Once all the blobs are queued for copy, the monitoring component can do the following:
+
+List all blobs in the destination container.
+Check the copy status; if it has failed or has been aborted, start a new copy operation.
+Example: Here is a sample queuing of asynchronous copy. It will ignore snapshots and only copy base blobs. Error handling is excluded for brevity.
+
+public static void CopyBlobs(
+                CloudBlobContainer srcContainer,  
+                string policyId, 
+                CloudBlobContainer destContainer)
+{
+    // get the SAS token to use for all blobs
+    string blobToken = srcContainer.GetSharedAccessSignature(
+                       new SharedAccessBlobPolicy(), policyId);
+ 
+     
+    var srcBlobList = srcContainer.ListBlobs(true, BlobListingDetails.None);
+    foreach (var src in srcBlobList)
+    {
+        var srcBlob = src as CloudBlob;
+ 
+        // Create appropriate destination blob type to match the source blob
+        CloudBlob destBlob;
+        if (srcBlob.Properties.BlobType == BlobType.BlockBlob)
+        {
+            destBlob = destContainer.GetBlockBlobReference(srcBlob.Name);
+        }
+        else
+        {
+            destBlob = destContainer.GetPageBlobReference(srcBlob.Name);
+        }
+ 
+        // copy using src blob as SAS
+        destBlob.StartCopyFromBlob(new Uri(srcBlob.Uri.AbsoluteUri + blobToken));
+    }
+}
+Example: Monitoring code without error handling for brevity. NOTE: This sample assumes that no one else would start a different copy operation on the same destination blob. If such assumption is not valid for your scenario, please see “How do I prevent someone else from starting a new copy operation to overwrite my successful copy?” below.
+
+public static void MonitorCopy(CloudBlobContainer destContainer)
+{
+    bool pendingCopy = true;
+ 
+    while (pendingCopy)
+    {
+        pendingCopy = false;
+        var destBlobList = destContainer.ListBlobs(
+                true, BlobListingDetails.Copy);
+
+        foreach (var dest in destBlobList)
+        {
+            var destBlob = dest as CloudBlob;
+ 
+            if (destBlob.CopyState.Status == CopyStatus.Aborted ||
+                destBlob.CopyState.Status == CopyStatus.Failed)
+            {
+                // Log the copy status description for diagnostics 
+                // and restart copy
+                Log(destBlob.CopyState);
+                    pendingCopy = true;
+                    destBlob.StartCopyFromBlob(destBlob.CopyState.Source);
+            }
+            else if (destBlob.CopyState.Status == CopyStatus.Pending)
+            {
+                // We need to continue waiting for this pending copy
+                // However, let us log copy state for diagnostics
+                Log(destBlob.CopyState);
+
+                pendingCopy = true;
+            }
+            // else we completed this pending copy
+        }
+ 
+        Thread.Sleep(waitTime);
+    };
+}
+  
+How do I prevent the source from changing until the copy completes?
+
+In an asynchronous copy, once authorization is verified on source, the service locks to that version of the source by using the ETag value. If the source blob is modified when the copy operation is pending, the service will fail the copy operation with HTTP status code 412 (Precondition Failed). To ensure that source blob is not modified, the client can acquire and maintain a lease on the source blob. (See the Lease Blob REST API.)
+
+With 2012-02-12 version, we have introduced the concept of lock (i.e. infinite lease) which makes it easy for a client to hold on to the lease. A good option is for the copy job to acquire an infinite lease on the source blob before issuing the copy operation. The monitor job can then break the lease when the copy completes.
+
+Example: Sample code that acquires a lock (i.e. infinite lease) on source.
+
+// Acquire infinite lease on source blob                                
+srcBlob.AcquireLease(null, leaseId);
+
+// copy using source blob as SAS and with infinite lease id
+string cid = destBlob.StartCopyFromBlob(
+    new Uri(srcBlob.Uri.AbsoluteUri + blobToken),                    
+    null /* source access condition */,
+    null /* destination access condition */,
+    null /* request options */);
+  
+How do I prevent someone else from starting a new copy operation to overwrite my successful copy?
+
+During a pending copy, the blob service ensures that no client requests can write to the destination blob. The copy blob properties are maintained on the blob after a copy is completed (failed/aborted/successful). However, these copy properties are removed when any write command like Put Blob, Put Block List, Set Blob Metadata or Set Blob Properties are issued on the destination blob. The following operations will however retain the copy properties: Lease Blob, Put Page, and Put Block. Hence, a monitoring component which may require providing confirmation that a copy is completed will need these properties to be retained until it verifies the copy. To prevent any writes on destination blob once the copy is completed, the copy job should acquire an infinite lease on destination blob and provide that as destination access condition when starting the copy blob operation. The copy operation only allows infinite leases on the destination blob. This is because the service prevents any writes to the destination blob and any other granular lease would require client to issue Renew Lease on the destination blob. Acquiring a lease on destination blob requires the blob to exist and hence client would need to create an empty blob before the copy operation is issued. To terminate an infinite lease on a destination blob with pending copy operation, you would have to abort the copy operation before issuing the break request on the lease.  
