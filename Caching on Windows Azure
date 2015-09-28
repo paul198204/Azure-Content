@@ -1,0 +1,41 @@
+Recently I have worked on  a few Cache issues with customers and one of the common pattern which came out - there is lots of confusion around Cache naming. I have noticed that customers were often referring to different Caching terminology while they meant something else. I wouldn't blame them. Unfortunately there have been several names floating around on Azure Cache and all of them are correct. This post aims to clarify those naming confusions around Windows Azure Caching.
+
+Microsoft offers several flavors of Cache on Windows Azure. To name a few - Microsoft AppFabric Cache, Role based Cache, Azure Cache Service, Managed Cache, Dedicated Cache, In-Role Cache, Co-located Cache, Shared Cache. Don’t be confused with so many Caching technologies. Some of these names are just redundant and duplicate.
+
+As on today, Microsoft offers 3 flavors of Cache:
+
+ Cache	Also referred as	 Supportability
+ In-role Cache
+
+Dedicated Cache
+Co-located Cache
+ Role based Cache
+  Windows Azure Cache	 Supported
+ 
+ Azure Shared Cache 
+ Azure AppFabric Cache	 This will be retired soon.
+
+ Azure Cache Service
+ Azure Managed Cache	 This feature is in preview.
+ 
+
+Here is more information on these 3 flavors:
+ 
+In-role Cache (Windows Azure Cache, Role based Cache )
+In-role Cache is also known as Role based Cache and Windows Azure Cache. In-Role Cache supports the ability to host Cache on Windows Azure roles. In this model, the cache is part of your cloud service. One role within the cloud service is selected to host Cache. The running instances of that role join memory resources to form a cache cluster. This private cache cluster is available only to the roles within the same deployment. There are two deployment topologies for Cache: dedicated and co-located.
+ 
+Dedicated Cache
+In the dedicated topology, you define a worker role that is dedicated to Cache. This means that all of the worker role's available memory is used for the Cache and operating overhead.
+ 
+Co-Located Cache
+In a co-located topology, you use a percentage of available memory on application roles for Cache. For example, you could assign 20% of the physical memory for Cache on each web role instance.
+ 
+To know more about In-Role Cache: http://msdn.microsoft.com/en-us/library/windowsazure/hh914161.aspx
+ 
+Shared Cache (Also known as - Azure AppFabric Cache)
+Windows Azure Shared Caching was another option for using Cache in a Windows Azure application previously. This is being replaced by Windows Azure Cache Service (Preview).
+Please note Windows Azure Shared Cache is deprecated will be retired soon. Click here to learn more about Shared Cache -http://msdn.microsoft.com/en-us/library/windowsazure/gg278356.aspx#SharedCaching 
+ 
+
+Windows Azure Cache Service (Also known as Managed Cache)
+Cache Service (Preview) is a brand new Cache technology introduced recently.   Azure Cache Service  is a new way to perform caching that helps build fast, scalable applications in Windows Azure through a secure, dedicated cache created in Windows Azure.  Click here to learn more about it - http://msdn.microsoft.com/en-us/library/windowsazure/dn386094.aspx
