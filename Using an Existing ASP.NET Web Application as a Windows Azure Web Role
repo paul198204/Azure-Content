@@ -78,3 +78,151 @@ You will also need to make sure that you don’t have assumptions about the stat
 Finally, the scale model on Windows Azure is to increase instances of both the Web role and Worker role.  In order to make effective use of that model, it is quite likely that you’ll have to rework some of your code.
 
 That’s the story for the January 2009 CTP.  Keep in mind that we’re looking at how we can improve on this story and make it easier to move existing and new assets to and from Windows Azure. 
+
+
+
+
+ASP.Net MVC on Windows Azure with Providers
+
+RATE THIS
+Jim Nakashima - MSFT 10 Nov 2008 3:10 PM 19
+[For more recent information on using ASP.NET MVC with Windows Azure please see this post.]
+
+Before you get started with ASP.Net MVC and Windows Azure – please install this hotfix.
+
+Were you wondering why the sample project I got from Phil attached to my post, ASP.Net MVC on Windows Azure, didn't include the sample Windows Azure ASP.Net providers?
+
+The answer is that we wanted to get something out early that would unblock folks from trying out the MVC on Windows Azure scenario.  That sample solution accomplished that.
+
+We were also working out a problem we were seeing when using those providers with MVC.  The problem was that we would get a timeout after logging in or creating a new account when running on Windows Azure -- a problem you won't see when running locally against the Development Fabric.
+
+Luckily, Phil pointed me to a workaround which I've now verified solves this problem. (the fix is now in MVC).
+
+I tend to get pinged from time to time about issues with RequestURL so I’ll give a pointer to a post to David’s blog that talks about that.
+
+This post will cover augmenting the existing "MVC on Windows Azure sample" with membership, role and session state providers as well as the workaround that ensures the sample works when you run on Windows Azure.
+
+It is again important to note that using ASP.Net MVC on Windows Azure is still a preview.
+
+The sample code that goes along with this code is on the MSDN Code Gallery MVCCloudService and does not include the sample projects from the Windows Azure SDK, please follow the instruction below for adding and referencing them. (when you first load the project it will complain that the sample projects are missing)
+
+Starting with the sample project attached to my last post, the first thing to do is to add the AspProviders and the StorageClient projects found in the Windows Azure SDK samples to the solution.
+
+These sample projects are found in the SDK install folder (C:\Program Files\Windows Azure SDK\v1.0 by default), where you'll see a zip file (samples.zip).  Copy this file to a writeable (i.e. not in Program Files) location and unzip it.
+
+Right click on the Solution node in Solution Explorer -> Add -> Existing Project:
+
+image
+
+Navigate to the directory where you unzipped the Windows Azure SDK samples, AspProviders\Lib and select AspProviders.csproj:
+
+image
+
+Do the same to add the StorageClient.csproj project from StorageClient\Lib:
+
+image
+
+Then add project references to both of those projects by right clicking on the reference node in the CloudService1_WebRole project and selecting "Add Reference...", choosing the Projects Tab, selected both AspProviders and StorageClient projects and hitting "OK".
+
+image
+
+Let's now add the Service Definition and Service Configuration settings and values needed to access the Windows Azure Storage Services by by adding the following code to the Service Definition and Service Configuration files found in the Cloud Service project.
+
+The settings below are setup for the local Development Storage case.
+
+Note: When switching over to the *.core.windows.net endpoints, you'll have to use the https addresses (i.e. https://blob.core.windows.net) otherwise the providers will throw an exception.  Alternatively you could set allowInsecureRemoteEndpoints to true -- however that is not recommended.
+
+The definitions in ServiceDefinition.csdef:
+
+<ConfigurationSettings>
+    <Setting name="AccountName"/>
+    <Setting name="AccountSharedKey"/>
+    <Setting name="BlobStorageEndpoint"/>
+    <Setting name="QueueStorageEndpoint"/>
+    <Setting name="TableStorageEndpoint"/>
+    <Setting name="allowInsecureRemoteEndpoints"/>
+</ConfigurationSettings>
+The Values in ServiceConfiguration.cscfg:
+
+
+<Setting name="AccountName" value="devstoreaccount1"/>
+<Setting name="AccountSharedKey" value="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="/>
+<Setting name="BlobStorageEndpoint" value="http://127.0.0.1:10000"/>
+<Setting name="QueueStorageEndpoint" value = "http://127.0.0.1:10001"/>
+<Setting name="TableStorageEndpoint" value="http://127.0.0.1:10002"/>
+<Setting name="allowInsecureRemoteEndpoints" value=""/>
+The providers also have settings to specify the name of the table for storing membership, role and session related data.  Note that as the comment indicates, the values below are the only values that will work in the Development Storage case. 
+
+In the MVCWebrole web.config, change <appSettings/> to the following:
+
+<appSettings>
+    <!-- provider configuration -->
+    <!-- When using the local development table storage service only the default values given
+     below will work for the tables (Membership, Roles and Sessions) since these are the names
+     of the properties on the DataServiceContext class -->
+    <add key = "DefaultMembershipTableName" value="Membership"/>
+    <add key = "DefaultRoleTableName" value="Roles"/>
+    <add key = "DefaultSessionTableName" value="Sessions"/>
+    <add key = "DefaultProviderApplicationName" value="MvcCloudService"/>
+    <add key = "DefaultSessionContainerName"/>
+</appSettings>
+The following connection string for SQL can be removed:
+
+<add name="ApplicationServices" connectionString="data source=.\SQLEXPRESS;Integrated Security=SSPI;AttachDBFilename=|DataDirectory|aspnetdb.mdf;User Instance=true" providerName="System.Data.SqlClient"/>
+We'll now add the providers, via the MVCWebRole web.config file (remove the existing SQL Server ones).  First the membership provider:
+
+    <membership defaultProvider="TableStorageMembershipProvider" userIsOnlineTimeWindow = "20">
+      <providers>
+        <clear/>
+
+        <add name="TableStorageMembershipProvider"
+             type="Microsoft.Samples.ServiceHosting.AspProviders.TableStorageMembershipProvider"
+             description="Membership provider using table storage"
+             applicationName="MvcCloudService"
+             enablePasswordRetrieval="false"
+             enablePasswordReset="true"
+             requiresQuestionAndAnswer="false"
+             minRequiredPasswordLength="1"
+             minRequiredNonalphanumericCharacters="0"
+             requiresUniqueEmail="true"
+             passwordFormat="Hashed"
+                />
+
+      </providers>
+    </membership>
+
+Role Manager provider:
+
+    <roleManager enabled="true" defaultProvider="TableStorageRoleProvider" cacheRolesInCookie="true" cookieName=".ASPXROLES" cookieTimeout="30"
+                 cookiePath="/" cookieRequireSSL="false" cookieSlidingExpiration = "true"
+                 cookieProtection="All" >
+      <providers>
+        <clear/>
+        <add name="TableStorageRoleProvider"
+             type="Microsoft.Samples.ServiceHosting.AspProviders.TableStorageRoleProvider"
+             description="Role provider using table storage"
+             applicationName="MvcCloudService"
+                />
+      </providers>
+    </roleManager>
+
+and the session state provider:
+
+    <sessionState mode="Custom" customProvider="TableStorageSessionStateProvider">
+      <providers>
+        <clear />
+        <add name="TableStorageSessionStateProvider"
+             type="Microsoft.Samples.ServiceHosting.AspProviders.TableStorageSessionStateProvider"
+             applicationName="MvcCloudService"
+             />
+      </providers>
+    </sessionState>
+You can consult the AspProvidersDemo project in the Windows Azure SDK samples as well. 
+
+Note: there is also a profile provider which would be added in the same manner.
+
+Before running, right click on the Cloud Service project node in Solution Explorer and select "Create Test Storage Tables".  (For more information on creating test storage tables, see this article)
+
+image
+
+And there you have it – ASP.Net MVC RC2 running on Windows Azure.
