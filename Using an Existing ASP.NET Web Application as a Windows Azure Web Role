@@ -226,3 +226,208 @@ Before running, right click on the Cloud Service project node in Solution Explor
 image
 
 And there you have it – ASP.Net MVC RC2 running on Windows Azure.
+
+
+
+Migrating an Existing ASP.NET App to run on Windows Azure
+
+RATE THIS
+Jim Nakashima - MSFT 8 Feb 2010 9:00 AM 20
+This post has 2 main parts.  The first part is an update to a post I wrote back in February 2009 about using an existing ASP.NET Web Application as Web Role and rolls in information from this post and this post.  The second part is about migrating an existing database running on SQL Express and ASP.NET providers to SQL Azure.
+
+I’ll start with the NerdDinner sample, so make sure you have ASP.NET MVC installed.  Although I used VS 2008 for the screen shots, this walkthrough is compatible with VS 2010.
+
+I’ve opened the solution in Visual Studio and removed the test project to keep things simple.
+
+image
+
+The first thing I need to do is make this Web Application project a Web Role. 
+
+I can do that one of two ways:
+
+1) Since I have the NerdDinner project open, I can add a Windows Azure Cloud Service to the solution.
+
+image
+
+Select “Windows Azure Cloud Service” and hit “OK”
+
+image
+
+Hit “OK” again, because we don’t need to add any Roles to this Cloud Service.
+
+image
+
+Right click on the “Roles” node in the Cloud Service project and select “Add | Web Role Project in solution…” 
+
+image
+
+Select the NerdDinner project.  Note that all of the Web Application projects in the solution will show up in this list. 
+
+image
+
+2) The other option would have been to create a new Cloud Service project and add the NerdDinner project to it using Solution | Add | Existing Project… then following the step of Add | Web Role Project in solution…
+
+image
+
+We now have the following:
+
+image 
+
+Before I get to what it will take to hit F5 and make the NerdDinner application run as a Web Role, let’s discuss the differences between a Web Role and an ASP.NET Web Application.
+
+There are 4 differences and they are:
+
+References to the Windows Azure specific assemblies: Microsoft.WindowsAzure.Diagnostics, Microsoft.WindowsAzure.ServiceRuntime, and Microsoft.WindowsAzure.StorageClient
+Bootstrap code in the WebRole.cs/vb file that starts the DiagnosticMonitor as well as defines a default behavior of recycling the role when a configuration setting change occurs.
+The addition of a trace listener in the web.config file: Microsoft.WindowsAzure.Diagnostics.DiagnosticMonitorTraceListener.
+In the case of an MVC web application, the assembly reference to System.Web.Mvc may not have the Copy Local property set to “True” – you need to to have this to ensure that the System.Web.Mvc assembly is available in the cloud.  The cloud VMs only contain the assemblies that come with the .NET Framework 3.5 SP1 redistributable. (System.Web.Mvc is not one of them and this is actually a hard thing to diagnose today as your role will go into an intializing, starting, stopping loop).  Setting “Copy Local” to True will ensure the assembly is added to the Service Package – the package that gets uploaded to the cloud and used to run a Cloud Service on the local development fabric.
+image
+
+Additionally, today we only support targeting .NET Framework 3.5 SP1.  Stay tuned for .NET 4 support.
+
+Except for #4, the other 3 differences aren’t strictly required.
+
+Chances are, at a minimum you are going to want to reference Microsoft.WindowsAzure.ServiceRuntime and Microsoft.WindowsAzure.Diagnostics, start the Diagnostic Monitor and add the trace listener so that you can write logs and gather other diagnostic information to diagnose issues or monitor the health of your application.
+
+If you use Windows Azure Storage, you are going to want to use the Microsoft.WindowsAzure.StorageClient library which provides a .NET interface to Windows Azure Storage.
+
+For the sake of this article, I’m just going to make sure that System.Web.Mvc has Copy Local set to true.
+
+Let’s try hitting F5 and seeing what we get.
+
+The application runs… almost…  if I click on “View Upcoming Dinners” I get an error. 
+
+image
+
+The connectionstrings.config file that is referenced in the web.config is not being found.
+
+<connectionStrings configSource="ConnectionStrings.config" />
+I need to make sure that this file is added to the Service Package.  I can do so by adding it to the NerdDinner project (right click on the NerdDinner project in Solution Explorer and select Add | Existing Item…)
+
+image
+
+Now set the Build Action to Content which should be done by default but I want to call it out as a way to ensure that given files in the project get added to the Service Package – you may a need to do this with some of your other files. 
+
+image
+
+Now, I hit F5 again, and everything works. But will it work in the cloud?
+
+The answer is no – NerdDinner has a NerdDinner.mdf file it uses for data and it makes use of ASP.NET providers – both of these rely on SQL Express, which I have on my local machine but are not available in the cloud VMs (even if it was, you would need to have a story that works across multiple instances).
+
+I have a decision to make.  I can use SQL Azure or I can rewrite the application to use Windows Azure Storage.  Since it is easy to do a search for “NerdDinner Azure” and find examples of the latter I will do the former – the point of this article is also to primarily focus on using the an existing project in a Windows Azure Cloud Service.
+
+In the real world, you’ll want to consider your data and compare the long term costs / effort / requirements to make the right decision.
+
+The key app I need to migrate the data to SQL Azure is the SQL Server Management Studio R2 CTP that supports SQL Azure.  Links are here. This post may also be helpful.
+
+I also need to have a database setup on SQL Azure.  Go to sql.azure.com and sign in. Create databases called NerdDinnerDB and aspprovidersdb.
+
+image
+
+Make sure to set your firewall settings such that you can the machine where your app is running in the development fabric has access. For example: this is not recommended, but makes development on multiple machines easy.
+
+image
+
+The steps to migrate the data are now:
+
+Migrate the NerdDinner.MDF
+Migrate the ASP.NET providers
+Change the connection strings.
+Let’s start with NerdDinner.MDF. 
+
+Open SQL Server Management Studio 2008 R2 and connect to .\SQLExpress. 
+
+Right click on Databases, and select “Attach…”
+
+ 
+
+ 
+
+image
+Click the Add… button and browse to the location of the NerdDinner.MDF file then click OK.
+
+image
+
+Now right click on the NerdDinner database that was just added, select Tasks | Generate Scripts…
+
+image
+
+This will bring you to the Generate and Publish Scripts wizard.  Click Next twice (selecting the default of the whole database) then click Advanced on the “Set Scripting Options” page.
+
+Scroll down to “Script for the database engine type” and select “SQL Azure Database”.
+
+image
+
+You also have an option to choose whether to script the schema only, the schema and data or the data only.  For the purposes of this walkthrough, you can choose the schema only or the schema and data.
+
+clip_image002
+
+Finish the wizard saving the script to file then open the file in SSMS.
+
+Now we want to connect to SQL Azure.  Do so by right clicking the Connect button in Object Explorer and selecting “Database Engine”. 
+
+For server name put the name you got from the SQL Azure portal, including the full domain name.  For example in the SQL Azure portal, the server name is listed as: zky996mdy7.database.windows.net
+
+image
+
+Correspondingly, enter this Server name in the Connect to Server dialog in SSMS:
+
+image
+
+The login is the Administrator username and the password setup in the SQL Azure portal.  Note that @zky996mdy7 is appended to the username.
+
+Click on Options >> select the “Connection Properties” tab and enter NerdDinnerDB for “Connect to database”.
+
+image
+
+This puts the SQL Azure database in the Object Explorer in SSMS.
+
+Right click on the SQL Azure database and select “New Query”.  This will open a SQL Query window.
+
+image
+
+Copy and paste in the database script the SQL Query window and hit Execute.  In the bottom status area of SSMS you should see that the query executed successfull and that it was against your SQL Azure NerdDinnerDB database.
+
+image
+
+Now we need to setup the ASP Providers.  This requires using provider scripts that we created for SQL Azure.  See this post for the scripts and more info.
+
+Download the scripts and extract.
+
+Open the InstallCommon.SQL script in SSMS.  Since we were last connected to the NerdDinnerDB and we now want to connect to the aspprovidersDB you created above in the SQL Azure portal, right click in the query window and select Connection | Disconnect. 
+
+image
+
+Follow that by right clicking in the SQL Query window and selecting Connection | Connect, entering the aspprovidersDB as the database to connect to in the options.
+
+image
+
+Run the script, open InstallMembership.SQL and installprofile.SQL and run those scripts as well.  Just be sure to always be running these scripts against aspprovidersdb.
+
+Now we need to change the connection strings in the connectionstrings.config file we added to the NerdDinner project.  There is a connection string for the NerdDinner database and a connection string for the ASP Providers.
+
+Here’s an example to follow, replacing the server, user ID and Password appropriately. 
+
+<connectionStrings>
+  <add name="ApplicationServices" connectionString="Server=tcp:zky996mdy7.database.windows.net;Database=aspprovidersdb;User ID=jnak;Password=<enter>;Trusted_Connection=False;" providerName="System.Data.SqlClient"/>
+  <add name="NerdDinnerConnectionString" connectionString="Server=tcp:zky996mdy7.database.windows.net;Database=NerdDinnerDB;User ID=jnak;Password=<enter>;Trusted_Connection=False;" providerName="System.Data.SqlClient"/>
+</connectionStrings>
+Delete the database files in App_Data and hit F5 to run this in the Development Fabric. 
+
+A couple things to test to ensure that both the providers and the nerddinner database are working correctly: Register for an account, host a dinner and view all upcoming dinners.
+
+Now deploy this to the cloud -- Please see the Deploying a Cloud Service walkthrough if you need help.
+
+What’s cool to consider here is we started with a single instance ASP.NET web application and turned it into a scalable cloud application that has the capability to be load balanced across any number of instances.
+
+As I look back at this walkthrough, it’s actually quite long but over half is migrating the data to SQL Azure and there was a lot of screen shots.  The key things I want you get out of this post are:
+
+1) Add existing ASP.NET Web Applications to the same solution as a Cloud Service project and use Roles | Add | Web Role in project…
+
+2) Understand the 4 differences between a Windows Azure Web Role project and a standard Web Application project
+
+3) Figure out how you are going to handle your data, you have a few options notably Windows Azure Storage and SQL Azure. Don’t forget about your providers.
+
+4) Walkthrough of migrating an existing database to SQL Azure.
+
+Finally, whenever you are deploying the cloud, it is useful to look into the service package and make sure that everything you need is in the service package.  See this post for more info – remember Windows Azure VMs only include the .NET Framework 3.5 SP1 redistributable.
