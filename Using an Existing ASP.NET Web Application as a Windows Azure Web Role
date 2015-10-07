@@ -1,0 +1,80 @@
+[For an expanded walkthrough about using an existing ASP.NET Web Application in a Cloud Service and migrating data to SQL Azure, please see this post: http://blogs.msdn.com/jnak/archive/2010/02/08/migrating-an-existing-asp-net-app-to-run-on-windows-azure.aspx.  Updated info on using MVC with WIndows Azure in this post.] 
+
+One of the things which I’ve kind of covered with my MVC posts here and here is the steps for taking an existing ASP.Net Web Application project and getting it to run on Windows Azure as the Web Role.
+
+Based on some of the forum questions I’ve seen, I figured this could use a post on its own.
+
+I’ll start this off by making a new ASP.Net Web Application – note that there is currently a limitation in that only Web Applications (and not Web Sites) can be associated as Web Roles in the Windows Azure Tools for Visual Studio – if you really need to use a Web Site, you can do so with the Windows Azure SDK.  If you have a Web Site and are willing to convert it to a Web Application, Visual Studio provides a conversion tool.
+
+File –> New project brings up the new project dialog:
+
+image 
+
+Where I’ll select an ASP.Net Web Application.  (this works the same for all ASP.Net Web Application types)
+
+This creates the Web Application project.
+
+Right-click on the Web Application project and select “Unload project”.
+
+image
+
+Then edit the csproj file:
+
+image
+
+This will bring up the csproj (same process for VB) file in the XML editor in Visual Studio.  To the top PropertyGroup, you need to add the RoleType element:
+
+<Project ToolsVersion="3.5" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+     (. . .)
+    <RoleType>Web</RoleType>
+  </PropertyGroup>
+Save the project file (in this case the csproj).
+
+A note on RoleType – our tools use the RoleType element in the project to filter out projects in the solution that can be associated as either a Web or Worker role.  That is, when you right click on the roles node in the Cloud Service project and select to associate either the Web or Worker Role to a project in the solution – we use this element to give you a list of Web Role or Worker Role projects to choose from.
+
+Now, create a new blank Cloud Service
+
+ 
+
+ 
+
+image
+
+After the Cloud Service project creation completes, in the Solution Explorer, add the Web Application project created above to the solution by right clicking on the solution and selection Add –> Existing Project…
+
+image
+
+and selecting the Web Application project.
+
+Now add a Web role to the Cloud Service by selecting the Web Application.  This is possible because the project property was added to the csproj file.
+
+image
+
+Select the Web Application:
+
+image
+
+You now have a Cloud Service that has a Web Role that points to the ASP.Net Web Application that was created above.
+
+image
+
+One final thing to do is, in the Web Application project, add a reference to the Microsoft.ServiceHosting.ServiceRuntime assembly.
+
+image
+
+This assembly contains the Fabric runtime APIs that you can call for logging, configuration and local storage.
+
+And that’s it – hit F5 and you get debugging with your service running on the Development Fabric.  Publish the Cloud Service and you get a Windows Azure Service Package. 
+
+If you are using the ASP.Net providers such as membership, role, profile or session state you can use the sample implementations that are in included in the SDK samples that use Cloud Storage.  See this post for more information on how to set those up.
+
+One of the bigger challenge you will have when trying to run an existing ASP.Net Web Application on Windows Azure is data.
+
+Windows Azure provides Blob, Queue and Table storage but doesn’t have a SQL Server story yet (nor does the richer SQL Data Services).  This means that you would have to rewrite your data access layer to use one of the Cloud Storage services.
+
+You will also need to make sure that you don’t have assumptions about the state of the machine you are running on – in the Windows Azure world, your service could easily be moved to a new VM.  Additionally – Windows Azure Cloud Services only run in a modified version of partial trust.  If you make any calls that require Full Trust, those calls won’t work on Windows Azure.
+
+Finally, the scale model on Windows Azure is to increase instances of both the Web role and Worker role.  In order to make effective use of that model, it is quite likely that you’ll have to rework some of your code.
+
+That’s the story for the January 2009 CTP.  Keep in mind that we’re looking at how we can improve on this story and make it easier to move existing and new assets to and from Windows Azure. 
