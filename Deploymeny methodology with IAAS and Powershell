@@ -1,0 +1,139 @@
+Windows Azure IaaS Deployment Methodology with PowerShell Part One
+ YungChou YungChou
+9 Sep 2013 7:00 AM
+Comments 0 Likes
+ 
+[Part 2]
+
+This blog post series is to examine key Windows Azure IaaS concepts and deployment methodology. Part One presents the artifacts which together constitutes an IaaS deployment by walking through a scenario to configure a virtual network and deploy a VM to a target virtual subnets. Upcoming posts will introduce the considerations for automating a Windows Azure IaaS deployment with PowerShell. The content assumes a reader has and does not cover basic operations of PowerShell.
+
+The samples presented in this post are for demonstration. A similar PowerShell script is available at http://aka.ms/QSK which is easier to run and without the dependency of virtual network.
+
+Cloud Computing and IaaS Concept
+
+NIST SP 800-145
+Chou’s 532 Principle of Cloud Computing
+A supplement to NIST SP 800-145
+A memorandum to IT Leadership and Decision Makers
+Prerequisites
+
+To carry out the labs requires a Windows Azure subscription to deploy VMs. The instructions to acquire a free 30-day trial subscription with $200 credit are at http://aka.ms/200.
+The PowerShell script examples shown in this post require Windows Azure PowerShell Cmdlets configured. Follow the instructions at http://aka.ms/AzureCmdlets to set up Windows Azure PowerShell Cmdlets and establish the connectivity between Windows Azure and the local device.
+Windows Azure IaaS Artifacts and Deployment Methodology
+
+There are a number of artifacts in Windows Azure IaaS to be considered for an deployment. The follow highlight the significance and presents a recommended sequence of creating and configuring them for a deployment. Not discussed in this post is how to decommission a deployment which should follow the sequence in a reverse order to remove the resources.
+
+Affinity Group
+This is a logical construct associated with a geo-region and defined at the subscription level. An Affinity Group is to keep specified services running in the same specified data center to minimize the latency, potentially lower the costs while achieving optimal performance. In Windows Azure Management Portal, go to SETTINGS workspace, as shown below, to configure Affinity Groups.
+
+image
+
+An Affinity Group has a fundamental impact on the performance of a deployment. For instance, associating an Affinity Group with a virtual network will ensure that all VM instances deployed to the virtual network are placed in the same data center of the region specified in the affinity group. Meanwhile, associating a storage account (which is where the VHDs are kept) with an Affinity Group will ensure that all resources using the same storage account are stored in the same data center in the region specified in the Affinity Group.
+
+In the above examples, both a virtual network and a storage account are linked to the same Affinity Group. Which ensures both the VM instances deployed to the virtual network and the VHDs which the VM data are stored are in the same data center to optimize the performance.
+
+image An Affinity Group is a geo-location setting with performance implication and should be first planned in a deployment effort. Windows Azure PowerShell module provide four cmdlets relevant to managing an Affinity Group as shown on the left.
+
+In a deployment project, create an Affinity Group first so all subsequently configurations and placements can reference the Affinity Group throughout the lifecycle. The next step is to ensure all deployment resources will be stored in the same data center of a region specified by the Affinity Group. When deleting an Affinity Group, must first delete the associated storage accounts.
+
+Storage Account
+A storage account provides the access to Windows Azure storage within a geographic region. There are three types of storage: Blob, Queue, and Table in Windows Azure. For Windows Azure IaaS, a VM must be stored in Page Blob which has a maximal size of 1 TB. By default, geographically redundant storage (GRS) is optional and enabled at a storage account creation time. GRS replicates data to a data center in a secondary location of the same geo-region. When turning off geo-replication, a storage account then becomes locally redundant storage (LRS) which stores data in a single data center location. 
+
+Windows Azure creates two 512-bit management keys at a storage account creation time. An application will use one of the two keys to access the storage account. The monitoring and logging of a storage account will need to be enabled before activities are monitored and data is collected. Only then the charts on the dashboard and monitor page will present usage information . The following is a screen capture of the user experience of operating on a storage account with Windows Azure Management Portal.
+
+image
+
+image On the right are the four Windows Azure PowerShell cmdlets frequently used in managing a storage account. Notice before deleting a storage account can be removed, first delete all VMs instances and disks deployed with this storage account.
+
+Cloud Service
+This is a logical container presented as a single URL to include application code and configurations, while together form a cloud service or simply a service. For Windows Azure IaaS, each VM is deployed to a service, however a service can contain multiple VMs. Placing multiple VMs into a service makes these VMs connected and visible to one another. Considering a multi-tier application, a cloud service can therefore be employed to host multiple tiers of VMs which form the application architecture or architectural component, while manage all VMs which are connected as one entity. This concept is revisited when examining VM deployment later in this post.
+
+Notice when deploying a VM, one can choose to have Windows Azure create a cloud service which by default inherits the FQDN of the VM as the service name, or add the VM into an existing service which connects all VMs in the same service to form a target application/service architecture. One particular is worth mentioning that when there is only one VM in a cloud service, this cloud service will not be listed in CLOUD SERVICES workspace of Windows Azure Management Portal. A cloud service becomes visible in CLOUD SERVICES workspace when the service contains either no VM at all, or two or more VMs. And when deleting the only VM in a service, it takes a moment for the service to surface in CLOUD SERVICES workspace due to the synchronization of al the bookkeeping within Windows Azure.
+
+The following screen capture depicts an application or service architecture formed with four cloud services while the frontend service is with two VM instances configured in separate upgrade and fault domains to minimize downtime.
+
+imageimage From operational point of view, for better housekeeping and to avoid phantom services, i.e. those services with no resource deployment and no longer referenced, do delete a service after removing the last VM. There are also programmatic approach to manage a cloud service using Windows Azure PowerShell cmdlets including those shown on the right. 
+
+Two important artifacts of cloud computing are the so-called Fault Domain and Upgrade Domain. A fault domain is a single point of failure of hardware, while an upgrade domain is a logical grouping where an application is upgraded one upgrade domain at a time. Additional information is available at http://aka.ms/FaultDomain. Both will minimize, if not eliminate, the down time due to hardware outage or application upgrade. When a service are deployed with more than one VM instance, the SLA become effective and Windows Azure IaaS automatically configure fault domains and upgrade domains to ensure no single point of failure and minimize possible downtime. In a Windows Azure PaaS deployment, using service definition (.csdef) file a cloud service deployment can have up to twenty upgrade domains, while if not explicitly specified, a cloud service is defaulted to five upgrade domains.
+
+With Affinity Groups, storage accounts, and services in place, the architectural components are in place and it is now to decide which servers goes where and how these components are connected, i.e. design the network topology which brings the process to deploying a virtual network.
+
+Virtual Network
+Windows Azure employs a configuration file, NetworkConfig.xml, to define the settings of a virtual network. A Windows Azure virtual network is essentially a customized set of network configurations implemented on demand at a data center of a geo-region explicitly specified or implied by an Affinity group. A virtual network is as the name suggested virtual and this network virtualization is isolated at a subscription level.
+
+One productive way to acquire a NetworkConfig.xml file is to first in Windows Azure Management Portal interactively create a sample virtual network with Windows Azure Management Portal followed by exporting the configurations as shown below.
+
+image
+
+This NetworkConfig.xml file can be edited offline and later either interactively imported while creating a new virtual network or use PowerShell cmdlets to upload into an intended Windows Azure subscription.  A virtual network configuration encompasses a  name, DNS servers, cross-site connectivity, address space, subnet, name and masks, and gateway information. A sample NetworkConfig.xml without gateway connectivity is shown below:
+
+image
+
+Notice in the above configuration, the DNS server, foodns, is assigned with 10.2.1.4. The DNS settings are to be finalized at virtual network creation time, while no VM has been deployed yet. Here the address, 10.2.1.4, is specified since a DNS is planned to be the first VM deployed to 10.2.1.x subnet. Note that for a brand new subnet, Windows Azure IaaS reserves the first three IP addresses and 10.2.1.4 is the first IP address valuable for a VM deployment. This behavior is consistent with all virtual subnets. For instance, the first IP address available for a VM deployment in 192.168.x.x will be 192.168.x.4 since the first three applicable IP addresses are reserved by Windows Azure. The following screen capture illustrates a virtual network design based on the address, 10.2.0.0./16 with four subnets while in each subnet the first available IP address for deployment is 10.2.x.4.
+
+image
+
+Prior to any VM deployed to a virtual network, the associated DNS settings are changeable. Once a VM has been deployed to a virtual network, the DNS settings of the virtual network are no longer editable. Should there be a change needed the DNS settings, the virtual network will need to be recreated. Much planning does need to put in before deploying a virtual network. This is just like deploying a physical DNS, once in production with resources deployed, it can be very costly, if feasible at all, to change the DNS’ IP address.
+
+The virtual network shown above employs the address space, 10.2.0.0/16, and is with 4 configured subnets: infra, data, collab, and service. This network is a simple branch office or business unit environment where: infra subnet holds infrastructure servers like domain controllers, DNS, DHCP Servers, Update Servers, etc.; data subnet hosts data stores like Microsoft SQL Servers; collab subnet is for placing COLLABORATION servers like SharePoint; and service subnet runs the frontend IIS servers to receive and process incoming HTTP requests. A virtual network with various servers (i.e. VMs) deployed into target subnets and grouped into services can be automated using Windows Azure PowerShell. The following screen capture illustrates a partial deployment of an AD forest to a virtual network with six servers deployed into four target subnets. A Windows Azure PowerShell script carries out the deployment from zero to all in about thirty five minutes. An upcoming post will present the script used for this deployment.
+
+image
+
+Importing a NetworkConfig.xml and managing virtual network are fairly easy by employing the following Windows Azure PowerShell cmdlets below. Note that the Remove-AzureVnetConfig will delete the configuration from the current Windows Azure subscription.
+
+imageA user can interactively or programmatically construct  a virtual network and deploy VMs to target subnets in minutes without the need to pull a single cable, nor be concerned with any server hardware. All needed is a browser, Internet connectivity, and a Windows Azure subscription. The requirements and time needed for an infrastructure deployment have been minimized to a unforeseen level by Windows Azure IaaS, while the capabilities have become global and exponential with cloud computing.
+
+Windows Azure Virtual Network is a powerful feature and a crucial skill to have. For training, prototyping, or short-term networking needs, Windows Azure virtual networking offers tremendous capability and flexibility. For businesses of all sizes, branch office, and business units, Windows Azure IaaS and site-to-site or point-to-site connectivity introduces many new scenarios and exciting opportunities to extend, integrate, and transform an on-premises deployment into a hybrid cloud scenario. There is much information readily available in Windows Azure IaaS documentation and is not repeated here. IT professionals however must recognize that there is no other way to master Windows Azure IaaS without practicing, practicing, and practicing more on creating a virtual network, deploy VMs, and build an application architecture.
+
+Virtual Machine
+In this post-virtualization era, a VM has been come a baseline for constructing infrastructure. For deploying VMs, Windows Azure IaaS supports both Microsoft Operating Systems and non-Microsoft ones. The VM image gallery in Windows Azure Management Portal, as shown below, includes the latest releases and previews of  Windows Server, SQL Server, SHAREPOINT, BizTalk Server, and many non-Microsoft workload like openSUSE, SUSE Linux, Ubuntu, OpenLogic, etc.
+
+image
+
+The creation of a VM with Windows Azure IaaS is a rather straightforward process and http://aka.ms/AzureVM outlines the tasks and operations. In general, a VM can be deployed in a matter of minutes. Deploying individual servers from hardware requirements to a running VM instance in minutes is now a reality and will soon become a new normal of IT server deployment.
+
+One interesting observation of a Windows Azure IaaS deployment is that multiple VMs can be included in the same cloud service. This offers an opportunity to logically group specific VMs to form an application architectural component or architecture itself. For instance, a three-tier web application architecture like frontend, mid-tier, and backend can be all included in a cloud service such that all VMs are connected via the service to deliver the application. Alternatively each tier can be a service such that the frontend VMs are in a frontend service, mid-tier VMs are placed in a mid-tier service, and the backend are organized into a backend service while all three services collectively form the application/service architecture. The following schematic illustrates this concept.
+
+image
+
+imageOn the right, this is a list of Windows Azure PowerShell cmdlets relevant to operating on VMs. Some perhaps need more practices are New-AzureVMConfig and Add-AzureProvisioningConfig. The former is for creating a VM configuration object which can be part of a new deployment or used for adding a VM to an existing deployment, while the latter provisions a configuration of a VM. A the end of this post, a Windows Azure PowerShell sample script is included to demonstrate the usage of these two statements.
+
+From training, assessment, prototyping, development, to production, Windows Azure IaaS can shorten the go-to-market of an infrastructure deployment literally from months and weeks into hours and minutes. An application architecture can now be deployed as a service. And infrastructure deployment is becoming a facilitator to fast-forward an infrastructure project.
+
+Availability Set
+This is an essential part of a cloud deployment. An Availability Set is a logical group to signify the need for Windows Azure to prevent a single point of failure for all VMs included in the set. A single point of failure of hardware is the so-called Fault Domain. In Windows Azure a Fault Domain is a server rack. Those VMs instances added into an Availability Set in essence demand Windows Azure to deploy those instances to at least two or more fault domains, i.e. two or more server racks. Windows Azure IaaS makes configuring an Availability Set a very simple interactive mouse-clicking process while configuring a VM or after a deployment. The following is a screen capture depicting the user experience to configure a new service and an Availability Set during an interactive session of a VM deployment.
+
+image
+
+An Availability Set is an effective tool to ensure service availability. For instance, two Domain Controllers, DC1 and DC2, are paired as a backup to each other. At least one of the two servers should always be available for user authentications. Placing DC1 and DC2 into an Availability Set will guarantee there is no single point of failure of hardware between DC1 and DC2.
+
+With Windows Azure PowerShell module, an Availability Set can be specified as part of the VM configuration as shown in the example at the end of this post. To create an Availability Set after a VM deployment, one can use Set-AzureAvailabilitySet. 
+
+Load Balancer
+imageTypically a production web application will place a load balancer before the frontend web servers to distribute the incoming traffic for better server utilization and more predictable performance. In a traditional deployment, adding,  maintaining, and scaling a load balancer is a significant part of a web application since it adds additional hardware, software, complexities, security, maintenance, vendor dependency, etc. besides just costs.
+
+Windows Azure IaaS offers a basic load balancer with a round robin algorithm. The process to create a load balancer is to first specify/open a standalone endpoint, i.e. a port and mark the checkbox to also create a load-balanced set with this endpoint of a VM followed by configuring the load-balanced set. The above right shows Windows Azure PowerShell cmdlets for adding a load-balanced set which is part of the operations of adding an endpoint. While shown below is the user experience to configure a load-balanced set.
+
+image
+
+Later when configuring additional VMs to be added into the load-balanced set, for each VM add an endpoint and specify this endpoint to be added to an existing load-balanced set.
+
+image
+
+And the result as shown below is a load-balanced set created in minutes by a few mouse-clicks. The process and operations are almost too simple and quick to believe.
+
+image 
+
+Windows Azure PowerShell Skeleton for IaaS Deployment
+
+The following is a sample script to demonstrate the methodology of deploy a Windows Azure IaaS VM. The script is supplemented with the NetworkConfig.xml shown earlier in this post. Before executing the script, I first established connectivity between My PowerShell ISE session and Windows Azure by following the instructions at http://aka.ms/AzureCmdlets.
+
+Of the script, the first 19 lines are simply to assign values to variables. I separated out all variables from the main program to make it easier to test what-if scenarios. The main program starts from line 21 to line 51 following the methodology outlined in this post from creating an Affinity Group, a storage account, a service, to configuring and deploying a VM from line 35 to line 51. The VM configurations include an Availability Set at line 38 and a Load-Balanced Set at line 48. And finally, at line 53 the RDP file of the VM is also downloaded for accessing the VM remotely.
+
+image
+
+An execution of the above Windows Azure PowerShell script deployed the following resources. And notice the script configures and deploys a VM with dependency of the virtual network defined in the NetworkConfig.xml file. This script is a skeleton for demonstrating the deployment methodology.
+
+image
+
+- See more at: http://blogs.technet.com/b/yungchou/archive/2013/09/09/windows-azure-iaas-deployment-methodology-with-powershell-part-one.aspx#sthash.UsPwUIqT.dpuf
