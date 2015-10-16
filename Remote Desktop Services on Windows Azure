@@ -1,0 +1,338 @@
+Step-by-Step: Remote Desktop Services on Windows Azure - A cost-effective alternative to Desktop as a Service ( Part 2 )
+
+ KeithMayer KeithMayer 19 Sep 2013 3:00 AM
+UPDATE: As of January 1, 2014, the following RDS licensing changes offer an alternative to RDS Subscriber Access Licenses (SALs) noted below in this article.
+
+Effective January 1, 2014, Volume Licensing customers who have active Software Assurance on their RDS User CALs are entitled to RDS CAL Extended Rights, which allow use of their RDS User CAL with Software Assurance for accessing Windows Server Remote Desktop Session Virtualization servers running on Windows Azure. 
+
+For more details on the RDS licensing changes in Windows Server 2012 R2 and Windows Azure, please see the following additional resources:
+
+Windows Server 2012 R2 RDS Licensing FAQ
+Windows Azure Virtual Machines Licensing FAQ
+Appendix 2 of Software Assurance Benefits section in Product Use Rights (PUR)
+In Part 1 of this two-part article series, we introduced Remote Desktop Session Virtualization on Windows Azure as an attractive alternative to traditional Desktop as a Service ( DaaS ) solutions.  Remote Desktop Session Virtualization provides a high-density solution that requires provisioning and managing far fewer VMs than traditional DaaS, while still providing a robust and highly compatible method for delivery of high-fidelity remote desktop and remote application experiences to users. 
+
+In this article, we’ll step through the provisioning process for configuring a Remote Desktop Session Virtualization lab environment on the Windows Azure pay-as-you-go cloud platform.  Our lab environment will consist of two VMs: one VM configured as an Active Directory Domain Controller and DNS server, and a second VM configured as a Remote Desktop Session Host, Web Access gateway, and Connection Broker. 
+
+Remote Desktop Session Virtualization Lab Scenario 
+                     Lab Scenario: Remote Desktop Session Virtualization in the Cloud
+
+Note: If your production needs require higher scalability with multiple Remote Desktop servers or larger VM sizes, this base environment can be easily scaled-up to support those additional requirements.
+
+Let’s Get Started!
+In this Step-by-Step guide, you will learn how to:
+
+Get Started with Windows Azure Infrastructure Services
+Register a DNS Server in Windows Azure
+Define a Virtual Network in Windows Azure
+Configure Windows Server Active Directory in a Windows Azure VM
+Configure Remote Desktop Session Virtualization in a Windows Azure VM
+Test Remote Desktop Connectivity to Windows Azure
+Estimated time to complete: 1 hour, 15 minutes
+
+Exercise 1: Get Started with Windows Azure Infrastructure Services
+In this exercise, you will activate a free Windows Azure Trial Subscription and then setup two components that will be needed for the other exercises in this lab: a Windows Azure Affinity Group and a Windows Azure Storage Account.
+
+Sign-up for your FREE Windows Azure Trial Account. 
+  
+Sign-up for a FREE trial of Windows Azure at http://aka.ms/WindowsAzureFreeTrial so that you can follow along with the steps in this Hands-on Lab. 
+  
+When signing up for a Free Trial subscription, you will be prompted to login with Microsoft Account (formerly Windows Live ID) credentials. If you do not have valid Microsoft Account credentials, you may create new credentials at https://signup.live.com. 
+  
+Note: During the Free Trial sign-up process, you will be asked for credit card information to confirm that you are a legitimate free trial subscriber.  Your credit card information is only used to confirm your identity and you will NOT be charged for any Windows Azure services unless you explicitly convert your trial subscription to a paid subscription at a later date.  
+ 
+Login to the Windows Azure Management Portal. 
+  
+Login to the web-based Windows Azure Management Portal at http://manage.windowsazure.com with the same logon credentials you used to sign-up for the FREE Trial above.  
+  
+Once you’ve logged in, you should see the main Windows Azure Management portal dashboard. 
+  
+On the blue side navigation bar of the Windows Azure Management Portal, you’ll find the options for managing Virtual Machines, Virtual Networks, Storage and Settings in the cloud.  These are the items we’ll be primarily working with in this hands-on lab. 
+  
+You may need to scroll the blue side navigation bar up and down to see all of the options. 
+ 
+Define a new Windows Azure Affinity Group. 
+  
+Affinity Groups in Windows Azure are used to group your cloud-based services together, such as Virtual Machines, Virtual Networks and Storage, in order to achieve optimal performance. When you use an affinity group, Windows Azure will keep all services that belong to your affinity group running within the same data center as close as possible to each other to reduce latency and increase performance. 
+ 
+Create a new Affinity Group by selecting Settings from the blue side navigation bar in the Windows Azure Management Portal.  You may need to scroll the blue side navigation bar down to see this selection. 
+ 
+On the Settings page, select the Affinity Groups tab on the top navigation bar.  
+ 
+Click the +ADD button on the bottom navigation bar. 
+ 
+On the Create Affinity Group form, enter the following details: 
+  
+Name: Enter a unique name for your new Affinity Group, such as XXXlab01 (where XXX is replaced with your initials) 
+  
+Region: Select the “East US” datacenter sub-region. 
+  
+Click the clip_image001 button to create a new Affinity Group. 
+ 
+Create a new Windows Azure Storage Account. 
+  
+Virtual Machines that are provisioned in Windows Azure are stored in the world-wide cloud-based Windows Azure Storage service.  In terms of high availability, the Storage service provides built-in storage replication capability – where every VM is replicated to three separate locations within the Windows Azure data center region you select.  In addition, Windows Azure Storage provides a geo-replication feature for also replicating your VMs to a remote data center region. 
+ 
+Create a new Storage account by clicking the +NEW button on the bottom toolbar in the Windows Azure Management Portal and then select Data Services | Storage | Quick Create.   
+ 
+Complete the following fields for creating your Storage account: 
+  
+URL: Enter a unique name for your new storage account, such as XXXlabstor01 (where XXX is replaced with your initials) 
+  
+Region/Affinity Group: Select the Affinity Group you created in Step 3 above. 
+  
+Enable Geo-Replication: By default, this option is selected.  Leave the default option in place. 
+ 
+Click the CREATE STORAGE ACCOUNT button to create your new Windows Azure Storage account.
+Exercise 2: Register a DNS Server in Windows Azure
+Register the internal IP address that our domain controller VM will be using for Active Directory-integrated Dynamic DNS services by performing the following steps:
+
+Sign in at the Windows Azure Management Portal with the logon credentials used when you signed up for your Free Windows Azure Trial. 
+ 
+Select Networks located on the side navigation panel on the Windows Azure Management Portal page. 
+ 
+Click the +NEW button located on the bottom navigation bar and select Networks | Virtual Network | Register DNS Server. 
+ 
+Complete the DNS Server fields as follows: 
+  
+NAME: XXXlabdns01 
+  
+DNS Server IP Address: 10.0.0.4 
+ 
+Click the REGISTER DNS SERVER button.
+Exercise 3: Define a Virtual Network in Windows Azure
+Define a common virtual network in Windows Azure for running Active Directory, Database and SharePoint virtual machines by performing the following steps:
+
+Sign in at the Windows Azure Management Portal with the logon credentials used when you signed up for your Free Windows Azure Trial. 
+ 
+Select Networks located on the side navigation panel on the Windows Azure Management Portal page.  
+ 
+Click the +NEW button located on the bottom navigation bar and select Networks | Virtual Network | Quick Create. 
+ 
+Complete the Virtual Network fields as follows: 
+  
+NAME: XXXlabnet01 
+  
+Address Space: 10.---.---.--- 
+  
+Maximum VM Count: 4096 [CIDR: /20] 
+  
+Affinity Group: Select the Affinity Group defined in Exercise 1 above. 
+  
+DNS Server: Select XXXlabdns01 – the DNS Server registered in Exercise 2 above. 
+ 
+Click the CREATE A VIRTUAL NETWORK button.
+Exercise 4: Configure Windows Server Active Directory in a Windows Azure VM
+Provision a new Windows Azure VM to run a Windows Server Active Directory domain controller in a new Active Directory forest by performing the following steps:
+
+Sign in at the Windows Azure Management Portal with the logon credentials used when you signed up for your Free Windows Azure Trial. 
+ 
+Select Virtual Machines located on the side navigation panel on the Windows Azure Management Portal page. 
+ 
+Click the +NEW button located on the bottom navigation bar and select Compute | Virtual Machines | From Gallery. 
+ 
+In the Virtual Machine Operating System Selection list, select Windows Server 2012 Datacenter and click the clip_image002 button. 
+ 
+On the Virtual Machine Configuration page, complete the fields as follows: 
+  
+Version Release Date: Select the latest version release date to build a new VM with the latest OS updates applied. 
+  
+Virtual Machine Name: XXXlabad01  
+  
+Size: Small (1 core, 1.75GB Memory) 
+  
+New User Name: Choose a secure local Administrator user account to provision. 
+  
+New Password and Confirm Password fields: Choose and confirm a new local Administrator password. 
+  
+Click the   button to continue. 
+  
+Note: It is suggested to use secure passwords for Administrator users and service accounts, as Windows Azure virtual machines could be accessible from the Internet knowing just their DNS.  You can also read this document on the Microsoft Security website that will help you select a secure password: http://www.microsoft.com/security/online-privacy/passwords-create.aspx. 
+ 
+On the Virtual Machine Configuration page, complete the fields as follows: 
+  
+Cloud Service: Create a new cloud service 
+  
+Cloud Service DNS Name: XXXlabad.cloudapp.net 
+  
+Region/Affinity Group/Virtual Network: Select XXXlabnet01 – the Virtual Network defined in Exercise 3 above. 
+  
+Virtual Network Subnets: Select Subnet-1 (10.0.0.0/23) 
+  
+Storage Account: Select the Storage Account defined in Exercise 1 above. 
+  
+Availability Set: Create an availability set 
+  
+Availability Set Name: XXXlabad 
+  
+Click the   button to continue.  
+ 
+On the Virtual Machine Configuration - Endpoints page, click the   button to accept the default firewall endpoint values and begin provisioning the new virtual machine. 
+  
+As the new virtual machine is being provisioned, you will see the Status column on the Virtual Machines page of the Windows Azure Management Portal cycle through several values including Stopped, Stopped (Provisioning), and Running (Provisioning).  When provisioning for this new Virtual Machine is completed, the Status column will display a value of Running and you may continue with the next step in this guide. 
+ 
+After the new virtual machine has finished provisioning, click on the name (XXXlabad01) of the new Virtual Machine displayed on the Virtual Machines page of the Windows Azure Management Portal. 
+ 
+On the virtual machine Dashboard page for XXXlabad01, make note of the Internal IP Address displayed on this page located on the right-side of the page.  This IP address should be listed as 10.0.0.4.  
+  
+If a different internal IP address is displayed, the virtual network and/or virtual machine configuration was not completed correctly.  In this case, click the DELETE button located on the bottom toolbar of the virtual machine details page for XXXlabad01, and go back to Exercise 2 and Exercise 3 to confirm that all steps were completed correctly. 
+ 
+On the virtual machine Dashboard page for XXXlabad01, click the Attach button located on the bottom navigation toolbar and select Attach Empty Disk.  Complete the following fields on the Attach an empty disk to the virtual machine form: 
+  
+File Name: XXXlabad01-data01 
+  
+Size: 10 GB 
+  
+Host Cache Preference: None 
+  
+Click the   button to create and attach the new virtual hard disk to virtual machine XXXlabad01. 
+ 
+On the virtual machine Dashboard page for XXXlabad01, click the Connect button located on the bottom navigation toolbar and click the Open button to launch a Remote Desktop Connection to the console of this virtual machine.  Logon at the console of your virtual machine with the local Administrator credentials defined in Step 5 above. 
+ 
+From the Remote Desktop console of XXXlabad01, create a new partition on the additional data disk attached above in Step 10 and format this partition as a new F: NTFS volume.  This volume will be used for NTDS DIT database, log and SYSVOL folder locations. 
+  
+If you need additional guidance to complete this step, feel free to leverage the following study guide for assistance: 
+Windows Server 2012 “Early Experts” Challenge – Configure Local Storage  
+ 
+Using the Server Manager tool, install Active Directory Domain Services and promote this server to a domain controller in a new forest with the following parameters: 
+  
+Active Directory Forest name: contoso.com 
+  
+Volume Location for NTDS database, log and SYSVOL folders: F: 
+  
+If you need additional guidance to complete this step, feel free to leverage the following study guide for assistance: 
+Windows Server 2012 “Early Experts” Challenge – Install and Administer Active Directory 
+ 
+After Active Directory has been installed, you will be prompted to restart the XXXlabad01 virtual machine.  Restart the VM before continuing with the next exercise.
+The configuration for this virtual machine is now complete, and you may continue with the next exercise in this Step-by-Step guide.
+
+Exercise 5: Configure Remote Desktop Session Virtualization in a Windows Azure VM
+Provision a new Windows Azure VM to run Remote Desktop Session Virtualization by performing the following steps:
+
+Sign in at the Windows Azure Management Portal with the logon credentials used when you signed up for your Free Windows Azure Trial. 
+ 
+Select Virtual Machines located on the side navigation panel on the Windows Azure Management Portal page. 
+ 
+Click the +NEW button located on the bottom navigation bar and select Compute | Virtual Machines | From Gallery. 
+ 
+In the Virtual Machine Operating System Selection list, select Windows Server 2012 Datacenter and click the clip_image002 button. 
+ 
+On the Virtual Machine Configuration page, complete the fields as follows: 
+  
+Version Release Date: Select the latest version release date to build a new VM with the latest OS updates applied. 
+  
+Virtual Machine Name: XXXlabrd01  
+  
+Size: Large (4 cores, 7GB Memory) 
+  
+New User Name: Choose a secure local Administrator user account to provision. 
+  
+New Password and Confirm Password fields: Choose and confirm a new local Administrator password. 
+  
+Click the   button to continue. 
+  
+Note: It is suggested to use secure passwords for Administrator users and service accounts, as Windows Azure virtual machines could be accessible from the Internet knowing just their DNS.  You can also read this document on the Microsoft Security website that will help you select a secure password: http://www.microsoft.com/security/online-privacy/passwords-create.aspx. 
+ 
+On the Virtual Machine Configuration page, complete the fields as follows: 
+  
+Cloud Service: Create a new cloud service 
+  
+Cloud Service DNS Name: XXXlabrd.cloudapp.net 
+  
+Region/Affinity Group/Virtual Network: Select XXXlabnet01 – the Virtual Network defined in Exercise 3 above. 
+  
+Virtual Network Subnets: Select Subnet-1 (10.0.0.0/23) 
+  
+Storage Account: Select the Storage Account defined in Exercise 1 above. 
+  
+Availability Set: Create an availability set 
+  
+Availability Set Name: XXXlabrd 
+  
+Click the   button to continue.  
+ 
+On the Virtual Machine Configuration - Endpoints page, complete the fields as follows: 
+  
+Remote Desktop endpoint – set Protocol = TCP, Public Port = 3389, Private Port = 3389 
+  
+HTTPS endpoint – set Protocol = TCP, Public Port = 443, Private Port = 443 
+ 
+Click the   button to accept the default firewall endpoint values and begin provisioning the new virtual machine. 
+  
+As the new virtual machine is being provisioned, you will see the Status column on the Virtual Machines page of the Windows Azure Management Portal cycle through several values including Stopped, Stopped (Provisioning), and Running (Provisioning).  When provisioning for this new Virtual Machine is completed, the Status column will display a value of Running and you may continue with the next step in this guide.  
+ 
+After the new virtual machine has finished provisioning, click on the name (XXXlabrd01) of the new Virtual Machine displayed on the Virtual Machines page of the Windows Azure Management Portal. 
+ 
+On the virtual machine Dashboard page for XXXlabrd01, make note of the Internal IP Address displayed on this page located on the right-side of the page.  This IP address should be listed as 10.0.0.5.  
+  
+If a different internal IP address is displayed, the virtual network and/or virtual machine configuration was not completed correctly.  In this case, click the DELETE button located on the bottom toolbar of the virtual machine details page for XXXlabrd01, and go back to Exercise 2 and Exercise 3 to confirm that all steps were completed correctly. 
+  
+In addition, also make note of the Public Virtual P (VIP) Address for use in the next exercise. 
+ 
+On the virtual machine Dashboard page for XXXlabrd01, click the Connect button located on the bottom navigation toolbar and click the Open button to launch a Remote Desktop Connection to the console of this virtual machine.  Logon at the console of your virtual machine with the local Administrator credentials defined in Step 5 above.  
+ 
+Using the Server Manager tool, join this server to the contoso.com domain and restart the server to complete the domain join operation.
+ 
+After the server restarts, connect again via Remote Desktop to the server’s console and login with the CONTOSO\Administrator domain administrator credentials.
+ 
+Using the Server Manager tool, ensure that Remote management is Enabled on the Local Server page 
+ 
+Using the Server Manager tool, click Add roles and features in the QUICK START section of the Dashboard page. This will launch the Add roles and features wizard. 
+ 
+On the Before you begin page, click the Next button. 
+ 
+On the Select installation type page, select Remote Desktop Services installation and click the Next button. 
+ 
+On the Select deployment type page, select Quick Start and click the Next button. 
+ 
+On the Select deployment scenario page, select Session-based desktop deployment and click the Next button. 
+ 
+On the Select a server page, ensure that XXXlabrd01 is listed in the Selected listbox and click the Next button. 
+ 
+On the Confirmation page, check the checkbox to Restart the destination server automatically and click the Deploy button. 
+  
+The deployment of Remote Desktop Services will take a few minutes to complete and will require a server restart during the installation process.  After the server restarts, connect again via Remote Desktop to the server’s console and login with the CONTOSO\Administrator domain administrator credentials. 
+ 
+Using the Server Manager tool, click the Remote Desktop Services page and then click the +RD Licensing button to add a Remote Desktop Licensing Server. This will launch the Add RD Licensing Servers wizard. 
+ 
+On the Select a server page, add XXXlabrd01 to the Selected list box and click the Next button. 
+ 
+On the Confirm selections page, click the Add button.  When the process has completed, click the Close button. 
+ 
+Using the Server Manager tool, click the Remote Desktop Services | Servers page.  
+ 
+On the Servers page, right-click XXXlabrd01 and select RD Licensing Manager. This will launch the RD Licensing Manager tool. 
+ 
+Using the RD Licensing Manager tool, right-click on XXXlabrd01 and select Review Configuration… 
+ 
+On the XXXlabrd01 Configuration page, click the Add to Group button.  When prompted, click the Continue button followed by the OK button.
+The Remote Desktop Session Virtualization VM configuration for your lab environment is now completed.  In a production environment, before continuing, you would also use the RD Licensing Manager tool to Activate your licensing server and Install Licenses for user-mode Remote Desktop Subscriber Access Licenses (SALs).  See Remote Desktop Licensing for detailed steps for activating and installing licenses in a production environment.
+
+Exercise 6: Test Remote Desktop Services Connectivity to Windows Azure
+In this exercise, you will test Remote Desktop Services connectivity to a Windows Azure virtual machine running Remote Desktop Session Virtualization. Begin this exercise from your local PC desktop.
+
+On your local PC, launch Notepad using the Run As Administrator option. 
+ 
+In Notepad, open the C:\Windows\System32\Drivers\Etc\Hosts. file and add the following line to the end of the file where Public_IP_Address is replaced with the public IP address recorded in Exercise 5, Step 10. 
+  
+     Public_IP_Address XXXlabrd01.contoso.com 
+  
+After making this change, save the file and close notepad. 
+  
+Note: In a production environment, hostname resolution is typically handled by the DNS servers hosting your public DNS namespace.  When deploying for production purposes, make these hostname resolution updates on your DNS servers rather than in a local Hosts file. 
+ 
+On your local PC, open Internet Explorer and browse to RD Web Access at the following URL: 
+  
+     https://XXXlabrd01.contoso.com/RDWeb 
+  
+When prompted with a certificate error page, click the Continue link to continue to the web site. The certificate error page is displayed because the Quick Start configuration provisions the RDWeb web site with a self-signed certificate.  In a production configuration, this self-signed certificate would be replaced in IIS Manager with a valid certification registered by a trusted certificate authority. 
+ 
+When prompted to login to the RDWeb web site, login with CONTOSO\Administrator domain credentials. 
+ 
+Upon login, the remote applications defined in the default Remote Desktop Session Collection will be displayed.
+Lab Completed. Shut down your VMs.
+Your functional Remote Desktop Session Virtualization lab environment is now complete, but if you’re like me, you won’t be using this lab environment 24x7 around-the-clock.  As long as the virtual machines are running, they will continue to accumulate compute hours against your Windows Azure subscription.
+
+To preserve your compute hours for productive lab work, be sure to shut down each VM from the Windows Azure Management Portal when not in use. After each VM is successfully shutdown, the status of each VM will be listed in the portal as “Stopped (Deallocated)” and compute charges will not accumulate for VMs in this state.
+
+NOTE: It is important to shut down the VMs from the Windows Azure Management Portal to properly de-allocate compute resources and prevent compute charges from accumulating. If you shutdown VMs from within the Guest OS, the VMs will be placed in a “Stopped” state where compute resources are not de-allocated and compute charges in this state will still apply.
