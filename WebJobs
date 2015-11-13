@@ -1,0 +1,5 @@
+New-AzureWebsiteJob -Name "testwebsite" -JobName "myjob" -JobType Triggered -JobFile jobfilelocalpathin zip format
+
+Start-AzureWebsiteJob -Name "testwebsite" -JobName "myjob" -JobType Triggered
+
+Remove-AzureWebsiteJob -Name "testwebsite" -JobName "myjob" -JobType Triggered
